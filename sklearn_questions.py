@@ -59,6 +59,8 @@ from sklearn.utils.validation import check_X_y, check_is_fitted
 from sklearn.utils.validation import check_array
 from sklearn.utils.multiclass import check_classification_targets
 from sklearn.metrics.pairwise import pairwise_distances
+import scipy.stats
+
 
 
 class KNearestNeighbors(BaseEstimator, ClassifierMixin):
@@ -82,6 +84,18 @@ class KNearestNeighbors(BaseEstimator, ClassifierMixin):
         self : instance of KNearestNeighbors
             The current instance of the classifier
         """
+
+        X, y = check_X_y(X, y)
+    
+        # Check the targets
+        check_classification_targets(y)
+
+        # Store the training data and labels
+        self.X_ = X
+        self.y_ = y
+        self.n_features_in_ = X.shape[1]
+        self.classes_ = np.unique(y)
+
         return self
 
     def predict(self, X):
@@ -97,7 +111,21 @@ class KNearestNeighbors(BaseEstimator, ClassifierMixin):
         y : ndarray, shape (n_test_samples,)
             Predicted class labels for each test data sample.
         """
-        y_pred = np.zeros(X.shape[0])
+
+        check_is_fitted(self)    
+        X = check_array(X)
+        if X.shape[1] != self.n_features_in_:
+             raise ValueError(
+                 "Different input dimension %d than during fitting %d"
+             )
+
+        distances = pairwise_distances(X, self.X_)
+
+        knn_id = np.argsort(distances, axis=1)[:, :self.n_neighbors]
+        knn_label = self.y_[knn_id]
+        
+        y_pred = scipy.stats.mode(knn_label, axis=1, keepdims = True)[0].ravel()
+        
         return y_pred
 
     def score(self, X, y):
@@ -115,7 +143,17 @@ class KNearestNeighbors(BaseEstimator, ClassifierMixin):
         score : float
             Accuracy of the model computed for the (X, y) pairs.
         """
-        return 0.
+        check_classification_targets(y)
+        check_is_fitted(self)
+        X, y = check_X_y(X, y)
+        y_pred = self.predict(X)
+        
+        if X.shape[1] != self.n_features_in_:
+             raise ValueError(
+                 "Different input dimension %d than during fitting %d"
+             )
+
+        return np.mean(y_pred == y)
 
 
 class MonthlySplit(BaseCrossValidator):
@@ -155,6 +193,10 @@ class MonthlySplit(BaseCrossValidator):
         n_splits : int
             The number of splits.
         """
+        if self.time_col == 'index':
+            return X.index.nunique() - 1
+        else:
+            return X[self.time_col].nunique() - 1
         return 0
 
     def split(self, X, y, groups=None):
